@@ -1,0 +1,210 @@
+/* ==========================================================
+   Пространство памяти: полёт камеры сквозь эпохи.
+   Подключается после style.css и переопределяет то, что нужно.
+   ========================================================== */
+
+:root {
+  --void: #171b21;
+  --void-2: #222830;
+  --glow: #c92a3f;
+  --fog: rgba(232, 230, 221, 0.62);
+  --persp: 900px;
+}
+
+body.is-space { background-color: var(--void); background-image: none; }
+
+/* ---------- сцена ---------- */
+.space {
+  position: fixed; inset: 0; z-index: 1;
+  overflow: hidden;
+  color: var(--linen);
+  background: var(--void);
+  transition: background-color .2s linear;
+}
+.space.is-gone { visibility: hidden; }
+.camera {
+  position: absolute; inset: 0;
+  perspective: var(--persp);
+  perspective-origin: 50% 50%;
+}
+.world {
+  position: absolute; inset: 0;
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+.scene { position: absolute; inset: 0; transform-style: preserve-3d; pointer-events: none; }
+.item {
+  position: absolute; left: 50%; top: 50%;
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+  will-change: transform, opacity;
+  opacity: 0;
+}
+.item.is-off { display: none; }
+
+/* фотография-плоскость */
+.photo { margin: 0; }
+.photo img { display: block; width: 100%; height: auto; user-select: none; -webkit-user-drag: none; }
+.photo::after {
+  /* мягкая виньетка, чтобы края фото растворялись в пространстве */
+  content: ""; position: absolute; inset: 0;
+  background: radial-gradient(ellipse at center, transparent 55%, rgba(23, 27, 33, .65) 100%);
+}
+.photo figcaption {
+  position: absolute; left: 0; bottom: -28px;
+  font-family: var(--sans); font-size: 12px; color: var(--ash-muted); white-space: nowrap;
+}
+.photo--frame { padding: 10px; background: #e8e6dd; box-shadow: 0 30px 80px rgba(0, 0, 0, .55); }
+.photo--frame::after { display: none; }
+.photo--frame figcaption { color: var(--ash-muted); }
+
+/* текстовая панель */
+.panel { width: min(36rem, 86vw); }
+.panel .kicker { color: var(--glow); }
+.panel h2, .panel h1 { color: var(--linen); }
+.panel h1 { font-size: var(--fs-xxl); font-weight: 800; letter-spacing: -0.03em; line-height: .98; }
+.panel h1 .light { display: block; font-weight: 300; font-style: italic; }
+.panel h2 { font-size: var(--fs-xl); }
+.panel p { color: var(--ash-text); margin-top: 18px; }
+.panel .lead { color: var(--linen); }
+.panel .stat { display: flex; gap: 32px; flex-wrap: wrap; margin-top: 24px; font-family: var(--sans); font-size: var(--fs-sm); color: var(--ash-muted); }
+.panel .stat b { display: block; font-family: var(--serif); font-size: var(--fs-lg); color: var(--linen); font-weight: 700; }
+.panel .go {
+  pointer-events: auto; margin-top: 24px; display: inline-flex; gap: 10px; align-items: center;
+  font-family: var(--sans); font-size: var(--fs-sm); color: var(--linen);
+  border: 2px solid var(--linen); padding: 10px 18px; text-decoration: none;
+}
+.panel .go:hover { background: var(--linen); color: var(--void); }
+
+/* огромные даты в глубине */
+.year-ghost {
+  font-family: var(--serif); font-weight: 800; letter-spacing: -0.04em; line-height: 1;
+  font-size: clamp(9rem, 26vw, 26rem);
+  color: transparent; -webkit-text-stroke: 1.5px rgba(232, 230, 221, .32);
+  white-space: nowrap;
+}
+.word-ghost {
+  font-family: var(--serif); font-weight: 300; font-style: italic;
+  font-size: clamp(2rem, 6vw, 5rem); color: rgba(232, 230, 221, .5); white-space: nowrap;
+}
+
+/* вышитые объекты */
+.stitch-item canvas { width: 100%; height: auto; }
+.xcross { width: 22px; height: 22px; }
+.xcross::before, .xcross::after {
+  content: ""; position: absolute; left: 50%; top: 50%; width: 120%; height: 22%;
+  background: var(--c, var(--linen)); border-radius: 3px;
+  transform: translate(-50%, -50%) rotate(45deg);
+  box-shadow: 0 2px 0 rgba(0, 0, 0, .3);
+}
+.xcross::after { transform: translate(-50%, -50%) rotate(-45deg); }
+
+/* ---------- частицы и зерно ---------- */
+.dust { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.grain {
+  position: absolute; inset: -50%; pointer-events: none; opacity: .07;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  animation: grain 1.2s steps(6) infinite;
+}
+@keyframes grain {
+  0% { transform: translate(0, 0); } 20% { transform: translate(-3%, 2%); } 40% { transform: translate(2%, -3%); }
+  60% { transform: translate(-2%, -1%); } 80% { transform: translate(3%, 3%); } 100% { transform: translate(0, 0); }
+}
+.fade-veil { position: absolute; inset: 0; background: var(--linen); opacity: 0; pointer-events: none; }
+
+/* ---------- приборная панель полёта ---------- */
+.hud {
+  position: fixed; left: var(--gutter); top: 50%; transform: translateY(-50%); z-index: 20;
+  font-family: var(--sans); font-size: var(--fs-xs); color: var(--ash-muted);
+  transition: opacity .4s;
+}
+.hud.is-hidden { opacity: 0; pointer-events: none; }
+.hud ol { list-style: none; margin: 0; padding: 0 0 0 18px; position: relative; }
+.hud ol::before {
+  content: ""; position: absolute; left: 4px; top: 6px; bottom: 6px; width: 2px;
+  background: repeating-linear-gradient(rgba(232, 230, 221, .25) 0 6px, transparent 6px 10px);
+}
+.hud .hud-progress {
+  position: absolute; left: 4px; top: 6px; width: 2px; height: calc(100% - 12px);
+  background: var(--glow); transform-origin: top; transform: scaleY(0);
+}
+.hud li { position: relative; }
+.hud a { display: block; padding: 5px 0; text-decoration: none; color: inherit; transition: color .3s, transform .3s; }
+.hud a:hover { color: var(--linen); }
+.hud a.is-active { color: var(--linen); transform: translateX(4px); }
+.hud a.is-active::before {
+  content: ""; position: absolute; left: -18px; top: 50%; width: 10px; height: 10px; margin-top: -5px;
+  background-image: linear-gradient(45deg, transparent 38%, var(--glow) 38% 62%, transparent 62%), linear-gradient(-45deg, transparent 38%, var(--glow) 38% 62%, transparent 62%);
+}
+
+.fly-hint {
+  position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); z-index: 20;
+  font-family: var(--sans); font-size: var(--fs-sm); color: var(--ash-text);
+  display: flex; align-items: center; gap: 12px; transition: opacity .5s;
+}
+.fly-hint.is-hidden { opacity: 0; }
+.fly-hint i { width: 22px; height: 34px; border: 2px solid var(--ash-text); border-radius: 12px; position: relative; }
+.fly-hint i::after {
+  content: ""; position: absolute; left: 50%; top: 6px; width: 4px; height: 7px; margin-left: -2px;
+  background: var(--glow); border-radius: 2px; animation: wheel 1.6s ease-in-out infinite;
+}
+@keyframes wheel { 0% { transform: translateY(0); opacity: 1; } 100% { transform: translateY(12px); opacity: 0; } }
+
+/* прокрутка, которая «двигает камеру» */
+.flight { position: relative; z-index: 0; pointer-events: none; }
+.flight-stop { position: absolute; left: 0; width: 1px; height: 1px; }
+
+/* приземление: обычные разделы поверх пространства */
+.ground {
+  position: relative; z-index: 5;
+  background-color: var(--linen);
+  background-image:
+    linear-gradient(90deg, rgba(34, 38, 43, 0.035) 1px, transparent 1px),
+    linear-gradient(rgba(34, 38, 43, 0.035) 1px, transparent 1px);
+  background-size: var(--stitch) var(--stitch);
+}
+.ground .section { padding-left: var(--gutter); }
+
+/* шапка над тёмным пространством */
+.topbar.on-dark { color: var(--ash-text); }
+.topbar.on-dark .nav a::after { background: repeating-linear-gradient(90deg, var(--glow) 0 6px, transparent 6px 9px); }
+
+.credits { font-family: var(--sans); font-size: var(--fs-xs); color: var(--ink-soft); }
+.credits ol { margin: 0; padding-left: 18px; }
+.credits a { color: inherit; }
+
+@media (max-width: 960px) {
+  .hud { display: none; }
+  .topbar.on-dark .nav { color: var(--ink); }
+}
+
+/* ---------- без анимации: обычная лента ---------- */
+.flat .space { position: relative; inset: auto; overflow: visible; background: var(--void); }
+.flat .camera { position: relative; perspective: none; }
+.flat .world { position: relative; transform: none !important; }
+.flat .scene { position: relative; inset: auto; display: flex; flex-direction: column; gap: 32px; padding: 120px var(--gutter) 80px; }
+.flat .item { position: relative; left: auto; top: auto; transform: none !important; opacity: 1 !important; display: block !important; max-width: 100%; }
+.flat .item[data-flat="hide"] { display: none !important; }
+.flat .flight, .flat .hud, .flat .fly-hint, .flat .dust, .flat .grain { display: none; }
+
+/* ---------- дополнения ---------- */
+.item { width: var(--w, auto); }
+.panel { width: var(--w, min(36rem, 86vw)); text-shadow: 0 2px 22px rgba(23, 27, 33, .95), 0 0 2px rgba(23, 27, 33, .6); }
+.photo:not(.photo--frame) img { filter: brightness(.58); }
+.figures, .crosses { position: absolute; inset: 0; transform-style: preserve-3d; }
+.figure-item canvas { width: 100%; height: auto; }
+.hud { padding-left: 0; }
+.hud .hud-progress { left: 4px; }
+@media (max-width: 760px) {
+  .photo--frame { --w: 44vw !important; }
+  .word-ghost { font-size: 1.6rem; }
+  .panel h2 { font-size: 1.9rem; }
+}
+
+.photo:not(.photo--frame) {
+  -webkit-mask-image: radial-gradient(ellipse 50% 50% at center, #000 62%, transparent 100%);
+  mask-image: radial-gradient(ellipse 50% 50% at center, #000 62%, transparent 100%);
+}
+.photo:not(.photo--frame)::after { display: none; }
+.intro-stitch { width: 100%; height: auto; margin: 0 0 clamp(16px, 4vh, 40px); }
+.panel--intro { text-align: left; }
