@@ -27,6 +27,7 @@
 
   const D = 2600;          // расстояние между сценами
   const FAR = 3300;        // дальше этого ничего не видно
+  const CROSS_FAR = 1250;  // для мелких крестиков Хатыни — ближе
   const P = 900;           // перспектива, как в CSS
 
   if (reduce) root.classList.add('flat');
@@ -103,7 +104,7 @@
       if (Math.abs(x) < 16 && Math.abs(y) < 14) x += x < 0 ? -18 : 18; // не закрываем центр
       el.dataset.x = x.toFixed(1);
       el.dataset.y = y.toFixed(1);
-      el.dataset.z = Math.round(260 + (i / kinds.length) * 2000 + rnd() * 200);
+      el.dataset.z = Math.round(260 + (i / kinds.length) * 2100 + rnd() * 140);
       el.dataset.kind = 'cross';
       el.style.setProperty('--c', child ? C.glow : C.linen);
       const s = 14 + rnd() * 14;
@@ -143,7 +144,7 @@
     const narrow = vw < 760;
     items.forEach((it) => {
       let x = it.x0, y = it.y0, z = it.z0;
-      if (narrow && it.kind === 'panel') { x = 0; y = 6; z = it.z0 - 60; }
+      if (narrow && it.kind === 'panel') { x = 0; y = 6; z = it.z0 - 30; }
       if (narrow && it.kind === 'frame') { x = Math.sign(x) * 24; y = it.y0 < 0 ? -78 : 78; }
       if (narrow && it.kind === 'cross') { x = it.x0 * 1.7; y = it.y0 * 1.3; }
       if (narrow && it.kind === 'ghost') { x = it.x0 * 0.6; y = it.y0 * 1.4; }
@@ -157,6 +158,7 @@
       it.x = (x / 100) * vw; it.y = (y / 100) * vh; it.z = z;
       it.el.style.transform = `translate(-50%, -50%) translate3d(${it.x.toFixed(1)}px, ${it.y.toFixed(1)}px, ${(-it.z).toFixed(1)}px)`;
     });
+    order = items.slice().sort((p, q) => p.z - q.z); pa = 0; pb = order.length;
     dustResize();
     update(true);
   }
@@ -169,10 +171,21 @@
   const hex = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
   const mix = (a, b, t) => { const A = hex(a), B = hex(b); return `rgb(${A.map((v, i) => Math.round(v + (B[i] - v) * t)).join(',')})`; };
 
+  // запись в DOM только при реальном изменении
+  const cls = (el, name, on) => { const c = el._c || (el._c = {}); if (c[name] === on) return; c[name] = on; el.classList.toggle(name, on); };
+  let order = [], pa = 0, pb = 0, wasGone = false, lastBg = '', lastLand = -1, lastActive = -1, lastProg = -1;
+  const lowerBound = (z) => { let lo = 0, hi = order.length; while (lo < hi) { const m = (lo + hi) >> 1; if (order[m].z < z) lo = m + 1; else hi = m; } return lo; };
+
   function update(force) {
     if (reduce) return;
     const y = window.scrollY;
     const total = N * SEG;
+    if (y > total + vh * 1.2) {
+      // мы уже «на земле»: пространство не считаем и не рисуем
+      if (!wasGone) { wasGone = true; cls(space, 'is-gone', true); cls(hud, 'is-hidden', true); cls(hint, 'is-hidden', true); cls(topbar, 'on-dark', false); cls(topbar, 'is-solid', true); }
+      return;
+    }
+    if (wasGone) { wasGone = false; force = true; cls(space, 'is-gone', false); }
     const s = Math.max(0, Math.min(N, y / SEG)) || 0;
     const i = Math.min(N - 1, Math.floor(s));
     const t = s - i;
@@ -182,12 +195,18 @@
 
     world.style.transform = `translate3d(0, 0, ${cam.toFixed(1)}px)`;
 
-    for (const it of items) {
+    // считаем только предметы, которые сейчас в зоне видимости (или только что её покинули)
+    const a = lowerBound(cam - 60), b = lowerBound(cam + FAR + 0.001);
+    const from = force ? 0 : Math.min(a, pa), to = force ? order.length : Math.max(b, pb);
+    pa = a; pb = b;
+    for (let k = from; k < to; k++) {
+      const it = order[k];
       const d = it.z - cam;
+      const lim = it.kind === 'cross' ? CROSS_FAR : FAR;   // мелкие крестики вдали всё равно не видны
       let o;
-      if (d > FAR || d < -60) o = 0;
+      if (d > lim || d < -60) o = 0;
       else {
-        const far = Math.min(1, (FAR - d) / 800);
+        const far = Math.min(1, (lim - d) / 800);
         let near;
         switch (it.kind) {
           case 'panel': near = (d - 20) / 150; break;
@@ -208,31 +227,30 @@
 
     // цвет «воздуха» и приземление
     const ai = Math.min(AIR.length - 1, Math.floor(s)), at = s - ai;
-    space.style.backgroundColor = mix(AIR[ai], AIR[Math.min(AIR.length - 1, ai + 1)], smoother(Math.min(1, at)));
+    const bg = mix(AIR[ai], AIR[Math.min(AIR.length - 1, ai + 1)], smoother(Math.min(1, at)));
+    if (bg !== lastBg) { space.style.backgroundColor = bg; lastBg = bg; }
     const land = Math.max(0, Math.min(1, (s - (N - 1) - 0.35) / 0.55));
-    veil.style.opacity = land.toFixed(3);
+    if (Math.abs(land - lastLand) > 0.002) { veil.style.opacity = land.toFixed(3); lastLand = land; }
 
     // приборы
     const active = Math.min(N - 1, Math.round(s));
-    hudLinks.forEach((a, k) => a.classList.toggle('is-active', k === active));
-    hudProgress.style.transform = `scaleY(${Math.min(1, s / (N - 1)).toFixed(4)})`;
-    const inFlight = y < total + vh * 0.4;
-    hud.classList.toggle('is-hidden', !inFlight || land > 0.5);
-    hint.classList.toggle('is-hidden', y > 40);
-    topbar.classList.toggle('on-dark', y < total + vh * 0.55 && land < 0.6);
-    topbar.classList.toggle('is-solid', y > total + vh * 0.55);
-    space.classList.toggle('is-gone', y > total + vh * 1.2);
+    if (active !== lastActive) { hudLinks.forEach((el, k) => el.classList.toggle('is-active', k === active)); lastActive = active; }
+    const prog = Math.min(1, s / (N - 1));
+    if (Math.abs(prog - lastProg) > 0.001) { hudProgress.style.transform = `scaleY(${prog.toFixed(4)})`; lastProg = prog; }
+    cls(hud, 'is-hidden', !(y < total + vh * 0.4) || land > 0.5);
+    cls(hint, 'is-hidden', y > 40);
+    cls(topbar, 'on-dark', y < total + vh * 0.55 && land < 0.6);
+    cls(topbar, 'is-solid', y > total + vh * 0.55);
   }
 
   /* ---------- частицы: пепел и пыль, летящие навстречу ---------- */
   const dust = document.getElementById('dust');
   const dctx = dust.getContext('2d');
-  let parts = [], dpr = 1;
+  let parts = [];
   function dustResize() {
-    dpr = Math.min(window.devicePixelRatio || 1, 2);
-    dust.width = Math.round(vw * dpr); dust.height = Math.round(vh * dpr);
-    dctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const count = vw < 760 ? 110 : 240;
+    // точки мелкие и мягкие, поэтому рисуем без учёта плотности экрана — в 2–4 раза меньше пикселей
+    dust.width = vw; dust.height = vh;
+    const count = vw < 760 ? 70 : 150;
     if (parts.length !== count) {
       const rnd = seeded(7);
       parts = Array.from({ length: count }, () => ({
@@ -244,48 +262,108 @@
   let mx = 0, my = 0, tmx = 0, tmy = 0;
   window.addEventListener('pointermove', (e) => { tmx = e.clientX / vw - 0.5; tmy = e.clientY / vh - 0.5; }, { passive: true });
 
-  function frame(time) {
-    if (!reduce) {
-      // мягкий параллакс за курсором: смещаем точку схода
-      mx += (tmx - mx) * 0.05; my += (tmy - my) * 0.05;
-      camera.style.perspectiveOrigin = `${(50 + mx * 7).toFixed(2)}% ${(50 + my * 7).toFixed(2)}%`;
-      update(false);
-      drawDust(time || 0);
-    }
-    requestAnimationFrame(frame);
-  }
-
+  const buckets = [[], [], [], []], embers = [], streaks = [];
   let lastCam = 0;
-  function drawDust(time) {
+  function drawDust(time, steps) {
     const v = cam - lastCam; lastCam = cam;
     dctx.clearRect(0, 0, vw, vh);
     const ox = vw * (0.5 + mx * 0.07), oy = vh * (0.5 + my * 0.07);
     const ember = Math.max(0, 1 - Math.abs(sFloat - 5) / 0.9); // в Хатыни пыль становится пеплом с искрами
-    const streak = Math.min(1, Math.abs(v) / 40);
+    const streak = Math.abs(v) > 2;
+    buckets.forEach((arr) => (arr.length = 0)); embers.length = 0; streaks.length = 0;
     for (const p of parts) {
-      p.y -= p.drift * (0.6 + ember);
+      p.y -= p.drift * (0.6 + ember) * steps;
       let d = p.z - cam % FAR;
       if (d < 0) d += FAR;
       if (d < 4) continue;
       const k = P / (P + d);
-      const sx = ox + p.x * k, sy = oy + (p.y % (vh * 1.2)) * k;
+      const yy = p.y % (vh * 1.2);
+      const sx = ox + p.x * k, sy = oy + yy * k;
       if (sx < -20 || sx > vw + 20 || sy < -20 || sy > vh + 20) continue;
       const a = Math.min(1, (FAR - d) / 900) * Math.min(1, d / 200) * (0.35 + 0.25 * Math.sin(time / 900 + p.tw));
-      const isEmber = ember > 0 && p.tw < 6.28 * 0.3 * ember;
-      dctx.strokeStyle = dctx.fillStyle = isEmber ? `rgba(201, 42, 63, ${(a * 1.6).toFixed(3)})` : `rgba(232, 230, 221, ${a.toFixed(3)})`;
-      const r = p.r * k * 2.2;
-      if (streak > 0.05) {
-        // при быстром полёте частицы вытягиваются в штрихи
+      const r = Math.max(0.5, p.r * k * 2.2);
+      if (ember > 0 && p.tw < 6.28 * 0.3 * ember) { embers.push(sx, sy, r * 1.3); continue; }
+      if (streak) {
         const k2 = P / (P + d + v * 3);
-        dctx.lineWidth = Math.max(0.5, r);
-        dctx.beginPath();
-        dctx.moveTo(sx, sy);
-        dctx.lineTo(ox + p.x * k2, oy + (p.y % (vh * 1.2)) * k2);
-        dctx.stroke();
+        streaks.push(sx, sy, ox + p.x * k2, oy + yy * k2);
       } else {
-        dctx.beginPath(); dctx.arc(sx, sy, Math.max(0.4, r), 0, 6.283); dctx.fill();
+        buckets[Math.min(3, Math.floor(a / 0.15))].push(sx, sy, r);
       }
     }
+    // частицы красим пачками: 4 уровня прозрачности + искры, а не по одной
+    for (let q = 0; q < 4; q++) {
+      const arr = buckets[q];
+      if (!arr.length) continue;
+      dctx.fillStyle = `rgba(232, 230, 221, ${((q + 0.5) * 0.15).toFixed(3)})`;
+      for (let i = 0; i < arr.length; i += 3) dctx.fillRect(arr[i] - arr[i + 2], arr[i + 1] - arr[i + 2], arr[i + 2] * 2, arr[i + 2] * 2);
+    }
+    if (embers.length) {
+      dctx.fillStyle = 'rgba(201, 42, 63, 0.62)';
+      for (let i = 0; i < embers.length; i += 3) dctx.fillRect(embers[i] - embers[i + 2], embers[i + 1] - embers[i + 2], embers[i + 2] * 2, embers[i + 2] * 2);
+    }
+    if (streaks.length) {
+      dctx.strokeStyle = 'rgba(232, 230, 221, 0.32)'; dctx.lineWidth = 1.2;
+      dctx.beginPath();
+      for (let i = 0; i < streaks.length; i += 4) { dctx.moveTo(streaks[i], streaks[i + 1]); dctx.lineTo(streaks[i + 2], streaks[i + 3]); }
+      dctx.stroke();
+    }
+  }
+
+  /* ---------- качество подстраивается под устройство ---------- */
+  // Уровни 1–3 по очереди выключают самое дорогое (см. .perf-N в space.css).
+  const root_ = document.documentElement;
+  const qs = location.search;
+  const forced = qs.match(/[?&]level=(\d)/);
+  const coarse = window.matchMedia('(pointer: coarse)').matches;
+  const weak = (navigator.hardwareConcurrency || 8) <= 4 || (navigator.deviceMemory || 8) <= 4 || !!(navigator.connection && navigator.connection.saveData);
+  let level = 0;
+  function setLevel(l) {
+    level = Math.max(0, Math.min(3, l));
+    for (let k = 1; k <= 3; k++) root_.classList.toggle('perf-' + k, k <= level);
+    if (level >= 2) dctx.clearRect(0, 0, vw, vh);
+  }
+  setLevel(forced ? +forced[1] : weak || coarse ? 1 : 0);
+
+  const meter = /[?&]fps\b/.test(qs) ? document.body.appendChild(Object.assign(document.createElement('div'), { className: 'perf-meter' })) : null;
+  const perf = window.__perf = { n: 0, js: 0 };
+  let lastT = 0, acc = 0, accN = 0, idle = 0, dustSteps = 0, frameCam = 0, mT = 0, mN = 0, mJs = 0;
+
+  function frame(time) {
+    const t0 = performance.now();
+    const dt = lastT ? time - lastT : 16; lastT = time;
+    if (!reduce) {
+      // мягкий параллакс за курсором: пишем в DOM, только пока курсор двигается
+      if (!coarse) {
+        const dx = tmx - mx, dy = tmy - my;
+        if (Math.abs(dx) > 0.0004 || Math.abs(dy) > 0.0004) {
+          mx += dx * 0.05; my += dy * 0.05;
+          camera.style.perspectiveOrigin = `${(50 + mx * 7).toFixed(2)}% ${(50 + my * 7).toFixed(2)}%`;
+        }
+      }
+      update(false);
+      const moving = Math.abs(cam - frameCam) > 0.5; frameCam = cam;
+      if (!wasGone && level < 2) {
+        // в покое пыль достаточно рисовать 20 раз в секунду
+        idle = moving ? 0 : idle + 1; dustSteps++;
+        if (moving || idle % 3 === 0) { drawDust(time, dustSteps); dustSteps = 0; }
+      }
+      // если во время полёта кадры медленные — облегчаем сцену (только вниз, чтобы не мигало)
+      if (!forced && moving && time > 4000 && dt < 250) {
+        acc += dt; accN++;
+        if (accN >= 50) { if (acc / accN > 26 && level < 3) setLevel(level + 1); acc = 0; accN = 0; }
+      }
+    }
+    const cost = performance.now() - t0;
+    perf.js += cost; perf.n++;
+    if (meter) {
+      mN++; mJs += cost;
+      if (time - mT > 500) {
+        const act = order.reduce((c, it) => c + (it.off ? 0 : 1), 0);
+        meter.textContent = `${Math.round((mN * 1000) / (time - mT))} fps  js ${(mJs / mN).toFixed(2)} ms\nуровень ${level}  слоёв ${act}`;
+        mT = time; mN = 0; mJs = 0;
+      }
+    }
+    requestAnimationFrame(frame);
   }
 
   /* ---------- вышитое «ПАМЯТАЕМ» в первой сцене ---------- */
@@ -381,6 +459,17 @@
     });
   });
 
+  /* ---------- фото декодируем заранее, по одному, пока пользователь читает ---------- */
+  window.addEventListener('load', () => {
+    const imgs = Array.from(document.querySelectorAll('#world img'));
+    let n = 0;
+    (function next() {
+      if (n >= imgs.length) return;
+      const im = imgs[n++];
+      (im.decode ? im.decode() : Promise.resolve()).catch(() => {}).then(() => setTimeout(next, 90));
+    })();
+  });
+
   /* ---------- запуск ---------- */
   collect();
   layout();
@@ -394,7 +483,6 @@
     if (hasGsap) ScrollTrigger.refresh();
   });
   requestAnimationFrame(frame);
-  window.addEventListener('scroll', () => update(false), { passive: true });
 
   fontsReady.then(() => {
     stitchHero(!reduce);
